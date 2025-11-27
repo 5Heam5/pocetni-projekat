@@ -7,84 +7,101 @@ from pydantic import BaseModel, Field
 from typing import Union, List, Dict, Any
 
 
-# Koristimo pydantic.Field za bolju integraciju sa OpenWebUI
-class Valves(BaseModel):
-    # Osnovna AI podesavanja
-    OLLAMA_URL: str = Field(
-        default="http://host.docker.internal:11434/v1",
-        description="URL Ollama API-ja",
-        json_schema_extra={"group": "Osnovna podesavanja", "order": 1},
-    )
-    MODEL_AKADEMIK: str = Field(
-        default="qwen2-vl:7b",
-        description="Model za analizu i izradu outline-a (Akademik)",
-        json_schema_extra={"group": "Modeli", "order": 2},
-    )
-    MODEL_PISAC: str = Field(
-        default="mistral-nemo:12b",
-        description="Model za pisanje prvog drafta (Pisac)",
-        json_schema_extra={"group": "Modeli", "order": 3},
-    )
-    MODEL_LEKTOR: str = Field(
-        default="gemma3:27b-it-qat",
-        description="Model za konacno lekturanje i formatiranje (Lektor)",
-        json_schema_extra={"group": "Modeli", "order": 4},
-    )
-    TEMPERATURE: float = Field(
-        default=0.3,
-        ge=0.0,
-        le=1.0,
-        description="Kreativnost modela (0.0 - 1.0)",
-        json_schema_extra={"group": "Postavke modela", "order": 5},
-    )
-    MAX_TOKENS: int = Field(
-        default=16000,
-        description="Maksimalan broj tokena za odgovor",
-        json_schema_extra={"group": "Postavke modela", "order": 6},
-    )
-    MEMORY_TTL_SECONDS: int = Field(
-        default=3600,
-        description="Vreme zivota memorije u sekundama",
-        json_schema_extra={"group": "Napredna podesavanja", "order": 7},
-    )
-    MAX_TOKENS_PER_CHUNK: int = Field(
-        default=8000,
-        description="Maksimalan broj tokena po delu za lekturanje",
-        json_schema_extra={"group": "Napredna podesavanja", "order": 8},
-    )
-
-
-class Pipe:
+class Pipeline:
     """
     Akademski Tim 2025 – Triple Threat Edition.
     Procesuiranje teksta kroz tri faze: Akademik (analiza), Pisac (draft), Lektor (final).
     """
 
+    # Valves klasa mora biti definisana unutar Pipeline klase
+    class Valves(BaseModel):
+        # Osnovna AI podešavanja
+        OLLAMA_URL: str = Field(
+            default="http://host.docker.internal:11434/v1",
+            description="URL Ollama API-ja",
+            json_schema_extra={"group": "Osnovna podešavanja", "order": 1},
+        )
+        MODEL_AKADEMIK: str = Field(
+            default="qwen2-vl:7b",
+            description="Model za analizu i izradu outline-a (Akademik)",
+            json_schema_extra={"group": "Modeli", "order": 2},
+        )
+        MODEL_PISAC: str = Field(
+            default="mistral-nemo:12b",
+            description="Model za pisanje prvog drafta (Pisac)",
+            json_schema_extra={"group": "Modeli", "order": 3},
+        )
+        MODEL_LEKTOR: str = Field(
+            default="gemma3:27b-it-qat",
+            description="Model za konačno lekturanje i formatiranje (Lektor)",
+            json_schema_extra={"group": "Modeli", "order": 4},
+        )
+        TEMPERATURE: float = Field(
+            default=0.3,
+            ge=0.0,
+            le=1.0,
+            description="Kreativnost modela (0.0 - 1.0)",
+            json_schema_extra={"group": "Postavke modela", "order": 5},
+        )
+        MAX_TOKENS: int = Field(
+            default=16000,
+            description="Maksimalan broj tokena za odgovor",
+            json_schema_extra={"group": "Postavke modela", "order": 6},
+        )
+        MEMORY_TTL_SECONDS: int = Field(
+            default=3600,
+            description="Vreme života memorije u sekundama",
+            json_schema_extra={"group": "Napredna podešavanja", "order": 7},
+        )
+        MAX_TOKENS_PER_CHUNK: int = Field(
+            default=8000,
+            description="Maksimalan broj tokena po delu za lekturanje",
+            json_schema_extra={"group": "Napredna podešavanja", "order": 8},
+        )
+
     def __init__(self):
-        self.valves = Valves()
-        self.client = AsyncOpenAI(base_url=self.valves.OLLAMA_URL, api_key="ollama")
-        self.type = "manifold"
+        # Ovde inicijalizujemo valves. OpenWebUI će automatski popuniti vrednosti
+        # iz interfejsa kada korisnik sačuva podešavanja.
+        self.valves = self.Valves()
+        
+        # Postavke za OpenWebUI
+        self.type = "manifold"  # Ovaj pipeline rutira ka drugim modelima
+        self.name = "Akademski Tim 2025" # Ime koje će biti prikazano
+
+        # Inicijalizacija klijenta i memorije
+        self.client = None # Inicijalizacija u update_valves
         self.memory = {}
 
     def pipes(self):
-        return [{"id": "triple_v2", "name": "Akademski Tim 2025 – Triple Threat v2"}]
+        """Vraća listu dostupnih pipeline-ova koje ovaj objekat nudi."""
+        return [
+            {
+                "id": "triple_v2", 
+                "name": "Akademski Tim 2025 – Triple Threat v2"
+            }
+        ]
 
-    async def get_valves(self):
-        return self.valves.dict()
+    async def on_startup(self):
+        """Ova metoda se poziva kada se pipeline učita."""
+        # Ovde možete inicijalizati resurse koji su potrebni za ceo životni vek pipeline-a
+        print(f"Pipeline '{self.name}' se pokreće...")
+        # Inicijalizujemo klijenta sa početnim podešavanjima
+        self.client = AsyncOpenAI(base_url=self.valves.OLLAMA_URL, api_key="ollama")
 
-    async def update_valves(self, **valves):
-        try:
-            for key, value in valves.items():
-                if hasattr(self.valves, key):
-                    setattr(self.valves, key, value)
+    async def on_shutdown(self):
+        """Ova metoda se poziva kada se pipeline gasi."""
+        print(f"Pipeline '{self.name}' se gasi...")
+        # Ovde možete očistiti resurse
+        pass
 
-            self.client = AsyncOpenAI(base_url=self.valves.OLLAMA_URL, api_key="ollama")
-            return await self.get_valves()
-        except Exception as e:
-            raise Exception(f"Greska pri azuriranju podesavanja: {str(e)}")
+    async def on_valves_updated(self):
+        """Ova metoda se poziva kada korisnik sačuva nova podešavanja (valves)."""
+        # Ovo je ključno za primenu novih URL-ova ili modela bez restarta servisa
+        print(f"Podešavanja za pipeline '{self.name}' su ažurirana.")
+        self.client = AsyncOpenAI(base_url=self.valves.OLLAMA_URL, api_key="ollama")
 
     def _cleanup_memory(self):
-        """Ciscenje stare memorije."""
+        """Čišćenje stare memorije."""
         current_time = time.time()
         to_delete = [
             chat_id
@@ -121,7 +138,7 @@ class Pipe:
         return chunks
 
     async def _stream(self, model: str, prompt: Union[str, list[dict]], emitter):
-        """Pomocna funkcija za streamovanje odgovora od modela."""
+        """Pomoćna funkcija za streamovanje odgovora od modela."""
         messages = (
             [{"role": "user", "content": prompt}] if isinstance(prompt, str) else prompt
         )
@@ -345,6 +362,6 @@ Draft:
             }
         )
 
-        # Ciscenje memorije za završen chat
+        # Čišćenje memorije za završen chat
         if chat_id in self.memory:
             del self.memory[chat_id]
