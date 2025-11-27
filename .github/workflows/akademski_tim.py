@@ -1,3 +1,11 @@
+"""
+# Manifest
+name: "Akademski Tim 2025."
+version: "1.0"
+description: "Akademik (qwen2-vl) → Pisac (mistral-nemo) → Lektor (gemma3:27b-it-qat)"
+author: "Mladen Puletic 2025"
+"""
+
 import os
 import json
 import time
@@ -6,100 +14,106 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 from typing import Union, List, Dict, Any
 
+# Valves klasa MORA biti definisana na globalnom nivou, NE unutar Pipe klase
+class Valves(BaseModel):
+    # Osnovna AI podesavanja
+    OLLAMA_URL: str = Field(
+        default="http://host.docker.internal:11434/v1",
+        description="URL Ollama API-ja",
+        json_schema_extra={"group": "Osnovna podesavanja", "order": 1},
+    )
+    MODEL_AKADEMIK: str = Field(
+        default="qwen2-vl:7b",
+        description="Model za analizu i izradu outline-a (Akademik)",
+        json_schema_extra={"group": "Modeli", "order": 2},
+    )
+    MODEL_PISAC: str = Field(
+        default="mistral-nemo:12b",
+        description="Model za pisanje prvog drafta (Pisac)",
+        json_schema_extra={"group": "Modeli", "order": 3},
+    )
+    MODEL_LEKTOR: str = Field(
+        default="gemma3:27b-it-qat",
+        description="Model za konacno lekturanje i formatiranje (Lektor)",
+        json_schema_extra={"group": "Modeli", "order": 4},
+    )
+    TEMPERATURE: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Kreativnost modela (0.0 - 1.0)",
+        json_schema_extra={"group": "Postavke modela", "order": 5},
+    )
+    MAX_TOKENS: int = Field(
+        default=16000,
+        description="Maksimalan broj tokena za odgovor",
+        json_schema_extra={"group": "Postavke modela", "order": 6},
+    )
+    MEMORY_TTL_SECONDS: int = Field(
+        default=3600,
+        description="Vreme zivota memorije u sekundama",
+        json_schema_extra={"group": "Napredna podesavanja", "order": 7},
+    )
+    MAX_TOKENS_PER_CHUNK: int = Field(
+        default=8000,
+        description="Maksimalan broj tokena po delu za lekturanje",
+        json_schema_extra={"group": "Napredna podesavanja", "order": 8},
+    )
 
-class Pipeline:
+# KLJUCNA PROMENA: Koristite "Pipe" umesto "Pipeline"
+class Pipe:
     """
-    Akademski Tim 2025 – Triple Threat Edition.
+    Akademski Tim 2025.
     Procesuiranje teksta kroz tri faze: Akademik (analiza), Pisac (draft), Lektor (final).
     """
 
-    # Valves klasa mora biti definisana unutar Pipeline klase
-    class Valves(BaseModel):
-        # Osnovna AI podešavanja
-        OLLAMA_URL: str = Field(
-            default="http://host.docker.internal:11434/v1",
-            description="URL Ollama API-ja",
-            json_schema_extra={"group": "Osnovna podešavanja", "order": 1},
-        )
-        MODEL_AKADEMIK: str = Field(
-            default="qwen2-vl:7b",
-            description="Model za analizu i izradu outline-a (Akademik)",
-            json_schema_extra={"group": "Modeli", "order": 2},
-        )
-        MODEL_PISAC: str = Field(
-            default="mistral-nemo:12b",
-            description="Model za pisanje prvog drafta (Pisac)",
-            json_schema_extra={"group": "Modeli", "order": 3},
-        )
-        MODEL_LEKTOR: str = Field(
-            default="gemma3:27b-it-qat",
-            description="Model za konačno lekturanje i formatiranje (Lektor)",
-            json_schema_extra={"group": "Modeli", "order": 4},
-        )
-        TEMPERATURE: float = Field(
-            default=0.3,
-            ge=0.0,
-            le=1.0,
-            description="Kreativnost modela (0.0 - 1.0)",
-            json_schema_extra={"group": "Postavke modela", "order": 5},
-        )
-        MAX_TOKENS: int = Field(
-            default=16000,
-            description="Maksimalan broj tokena za odgovor",
-            json_schema_extra={"group": "Postavke modela", "order": 6},
-        )
-        MEMORY_TTL_SECONDS: int = Field(
-            default=3600,
-            description="Vreme života memorije u sekundama",
-            json_schema_extra={"group": "Napredna podešavanja", "order": 7},
-        )
-        MAX_TOKENS_PER_CHUNK: int = Field(
-            default=8000,
-            description="Maksimalan broj tokena po delu za lekturanje",
-            json_schema_extra={"group": "Napredna podešavanja", "order": 8},
-        )
-
     def __init__(self):
-        # Ovde inicijalizujemo valves. OpenWebUI će automatski popuniti vrednosti
-        # iz interfejsa kada korisnik sačuva podešavanja.
-        self.valves = self.Valves()
+        # Valves MORA biti instanca globalne Valves klase
+        self.valves = Valves()
         
-        # Postavke za OpenWebUI
-        self.type = "manifold"  # Ovaj pipeline rutira ka drugim modelima
-        self.name = "Akademski Tim 2025" # Ime koje će biti prikazano
-
-        # Inicijalizacija klijenta i memorije
-        self.client = None # Inicijalizacija u update_valves
+        # Postavke za OpenWebUI - OBAVEZNO
+        self.type = "manifold"
+        
+        # Inicijalizacija klijenta
+        self.client = AsyncOpenAI(base_url=self.valves.OLLAMA_URL, api_key="ollama")
         self.memory = {}
 
+    # OBAVEZNA METODA: OpenWebUI očekuje pipes() metodu
     def pipes(self):
-        """Vraća listu dostupnih pipeline-ova koje ovaj objekat nudi."""
         return [
             {
                 "id": "triple_v2", 
-                "name": "Akademski Tim 2025 – Triple Threat v2"
+                "name": "Akademski Tim 2025 v2"
             }
         ]
 
+    # OBAVEZNA METODA: OpenWebUI očekuje get_valves() metodu
+    async def get_valves(self):
+        return self.valves.dict()
+
+    # OBAVEZNA METODA: OpenWebUI ocekuje update_valves() metodu
+    async def update_valves(self, **valves):
+        try:
+            for key, value in valves.items():
+                if hasattr(self.valves, key):
+                    setattr(self.valves, key, value)
+            
+            # Azuriraj klijenta sa novim URL-om
+            self.client = AsyncOpenAI(base_url=self.valves.OLLAMA_URL, api_key="ollama")
+            return await self.get_valves()
+        except Exception as e:
+            raise Exception(f"Greska pri azuriranju podesavanja: {str(e)}")
+
+    # OPCIONALNE metode - OpenWebUI ih ne zahteva obavezno
     async def on_startup(self):
-        """Ova metoda se poziva kada se pipeline učita."""
-        # Ovde možete inicijalizati resurse koji su potrebni za ceo životni vek pipeline-a
-        print(f"Pipeline '{self.name}' se pokreće...")
-        # Inicijalizujemo klijenta sa početnim podešavanjima
-        self.client = AsyncOpenAI(base_url=self.valves.OLLAMA_URL, api_key="ollama")
+        """Ova metoda se poziva kada se pipeline ucita."""
+        print("Akademski Tim 2025 pipeline se pokreće...")
 
     async def on_shutdown(self):
         """Ova metoda se poziva kada se pipeline gasi."""
-        print(f"Pipeline '{self.name}' se gasi...")
-        # Ovde možete očistiti resurse
-        pass
+        print("Akademski Tim 2025 pipeline se gasi...")
 
-    async def on_valves_updated(self):
-        """Ova metoda se poziva kada korisnik sačuva nova podešavanja (valves)."""
-        # Ovo je ključno za primenu novih URL-ova ili modela bez restarta servisa
-        print(f"Podešavanja za pipeline '{self.name}' su ažurirana.")
-        self.client = AsyncOpenAI(base_url=self.valves.OLLAMA_URL, api_key="ollama")
-
+    # OSTATAK TVOJIH METODA OSTAJU ISTI...
     def _cleanup_memory(self):
         """Čišćenje stare memorije."""
         current_time = time.time()
@@ -165,6 +179,7 @@ class Pipeline:
             print(f"Greska u pipeline-u: {e}")
             return ""
 
+    # OBAVEZNA METODA: OpenWebUI očekuje pipe() metodu za glavnu logiku
     async def pipe(self, body: dict, __event_emitter__):
         """GLAVNA METODA - OpenWebUI poziva ovu metodu kada se pokrene pipeline"""
         self._cleanup_memory()
@@ -314,7 +329,7 @@ Zahtevi:
 Zadatak za POSLEDNJI deo teksta:
 1. Popravi gramatiku, stil, ponavljanja.
 2. Osiguraj 100% srpski jezik.
-3. DODAJ na sam pocetak celog rada (ne samo ovog dela) sažetak (Abstract) i ključne reci.
+3. DODAJ na sam pocetak celog rada (ne samo ovog dela) sazetak (Abstract) i ključne reci.
 4. Na sam kraj celog rada (ne samo ovog dela) dodaj formatiranu Literaturu prema APA 7 standardu.
 5. Vrati ISKLJUCIVO obrađen deo teksta.
 
@@ -325,8 +340,8 @@ Deo za lekturanje:
 Zadatak za SREDNJI deo teksta:
 1. Popravi gramatiku, stil, ponavljanja.
 2. Osiguraj 100% srpski jezik.
-3. NE DODAVAJ sažetak, ključne reci ili literaturu. To ce biti urađeno na kraju.
-4. Vrati ISKLJUCIVO obrađen deo teksta.
+3. NE DODAVAJ sažetak, kljucne reci ili literaturu. To ce biti uradjeno na kraju.
+4. Vrati ISKLJUCIVO obradjen deo teksta.
 
 Deo za lekturanje:
 {chunk}"""
@@ -362,6 +377,6 @@ Draft:
             }
         )
 
-        # Čišćenje memorije za završen chat
+        # Ciscenje memorije za završen chat
         if chat_id in self.memory:
             del self.memory[chat_id]
